@@ -1,14 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import shutil
 import tempfile
+import subprocess
 from typing import Optional
 from pydantic import BaseModel
 import json
 import base64
+import requests
 
 # 导入现有模块
 from data_preparation_mini import data_preparation_mini
@@ -41,6 +43,46 @@ class TrainingResponse(BaseModel):
     digital_human_id: Optional[str] = None
     web_url: Optional[str] = None
     assets_info: Optional[dict] = None
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    provider: str  # ollama | dify
+    model: Optional[str] = None
+    messages: list[ChatMessage]
+    temperature: Optional[float] = 0.7
+    stream: Optional[bool] = True
+    provider_config: Optional[dict] = None  # 自定义端点/参数
+
+
+# 环境变量配置（可在部署时覆盖）
+OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://127.0.0.1:11434")
+DIFY_API_URL = os.getenv("DIFY_API_URL", "https://api.dify.ai/v1")
+DIFY_API_KEY = os.getenv("DIFY_API_KEY", "")
+
+
+def compress_webm(input_path: str, output_path: str, width: int = 480, crf: int = 40, bitrate: str = "500k") -> None:
+    """使用ffmpeg压缩生成webm示例视频（用于移动端自动播放封面）。"""
+    cmd = [
+        "ffmpeg",
+        "-i", input_path,
+        "-vf", f"scale={width}:-2:flags=lanczos,split[s0][s1];[s0]reverse[r];[s1][r]concat",
+        "-c:v", "libvpx-vp9",
+        "-crf", str(crf),
+        "-b:v", bitrate,
+        "-row-mt", "1",
+        "-quality", "good",
+        "-cpu-used", "4",
+        "-an", "-loop", "0",
+        "-y", output_path
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        # 不中断主流程，仅记录
+        print(f"ffmpeg 生成示例视频失败: {e.stderr.decode(errors='ignore')}")
 
 @app.get("/")
 async def root():
@@ -97,7 +139,8 @@ async def train_digital_human(
             if os.path.exists(website_dir):
                 shutil.rmtree(website_dir)
             
-            shutil.copytree("web_source", website_dir)
+            src_web_dir = os.path.join(os.path.dirname(__file__), "web_source")
+            shutil.copytree(src_web_dir, website_dir)
             
             # 复制资源文件
             assets_dir = f"{website_dir}/assets"
@@ -106,13 +149,19 @@ async def train_digital_human(
             
             shutil.copy(f"{video_dir_path}/assets/01.mp4", f"{assets_dir}/01.mp4")
             shutil.copy(f"{video_dir_path}/assets/data", f"{assets_dir}/data")
+
+            # 生成移动端预览示例视频，非关键步骤失败可忽略
+            try:
+                compress_webm(temp_video_path, f"{assets_dir}/example.webm", width=360, crf=45, bitrate="300k")
+            except Exception as _:
+                pass
             
             # 读取数据文件并转换为base64
             with open(f"{video_dir_path}/assets/data", 'rb') as f:
                 file_data = f.read()
             base64_data = base64.b64encode(file_data).decode('utf-8')
             
-            # 更新JavaScript配置
+            # 更新JavaScript配置（先更新 js_source，再构建 jsCode15）
             logic_path = f"{website_dir}/js_source/logic.js"
             with open(logic_path, 'r', encoding='utf-8') as f:
                 js_content = f.read()
@@ -134,6 +183,31 @@ async def train_digital_human(
             with open(human_logic_path, 'w', encoding='utf-8') as f:
                 f.write(human_logic_content)
             
+            # 构建混淆版脚本，确保 index.html 引用的 jsCode15 可用
+            test_js_path = os.path.join(website_dir, "test.js")
+            js_code15_dir = os.path.join(website_dir, "jsCode15")
+            js_source_dir = os.path.join(website_dir, "js_source")
+            if os.path.exists(test_js_path):
+                try:
+                    subprocess.run(["node", test_js_path], check=True)
+                except Exception as e:
+                    print(f"构建 jsCode15 失败: {e}")
+            
+            # 如果 jsCode15 仍缺少关键文件，退化为直接复制 js_source
+            required_js = [
+                "humanLogic.js", "zip.js", "v.js", "opengl.js",
+                "logic.js", "loadMode1.js", "loadMode2.js", "load.js"
+            ]
+            try:
+                os.makedirs(js_code15_dir, exist_ok=True)
+                for fname in required_js:
+                    src = os.path.join(js_source_dir, fname)
+                    dst = os.path.join(js_code15_dir, fname)
+                    if os.path.exists(src) and not os.path.exists(dst):
+                        shutil.copy(src, dst)
+            except Exception as e:
+                print(f"复制 js_source 到 jsCode15 失败: {e}")
+
             # 清理临时文件
             shutil.rmtree(video_dir_path)
             
@@ -241,6 +315,121 @@ async def list_digital_humans():
                 })
     
     return {"digital_humans": digital_humans}
+
+
+@app.get("/templates")
+async def list_templates():
+    """模板/形象列表（同 /list 的别名）。"""
+    return await list_digital_humans()
+
+
+@app.get("/llm/providers")
+async def llm_providers():
+    """返回可用的大模型提供方及配置可用性。"""
+    providers = []
+    providers.append({
+        "name": "ollama",
+        "base_url": OLLAMA_API_URL,
+        "available": True
+    })
+    providers.append({
+        "name": "dify",
+        "base_url": DIFY_API_URL,
+        "available": bool(DIFY_API_KEY)
+    })
+    return {"providers": providers}
+
+
+def _stream_ollama(chat: ChatRequest):
+    base_url = (chat.provider_config or {}).get("base_url", OLLAMA_API_URL).rstrip("/")
+    url = f"{base_url}/api/chat"
+    payload = {
+        "model": chat.model or "qwen2.5:7b",
+        "messages": [m.model_dump() for m in chat.messages],
+        "stream": True,
+        "options": {"temperature": chat.temperature or 0.7}
+    }
+    with requests.post(url, json=payload, stream=True) as r:
+        r.raise_for_status()
+        for line in r.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except Exception:
+                continue
+            if obj.get("done"):
+                yield "event: done\n".encode()
+                yield b"data: {\"type\":\"done\"}\n\n"
+                break
+            delta = obj.get("message", {}).get("content") or obj.get("response") or ""
+            if delta:
+                data = json.dumps({"type": "delta", "content": delta}, ensure_ascii=False)
+                yield f"data: {data}\n\n".encode()
+
+
+def _stream_dify(chat: ChatRequest):
+    base_url = (chat.provider_config or {}).get("base_url", DIFY_API_URL).rstrip("/")
+    api_key = (chat.provider_config or {}).get("api_key", DIFY_API_KEY)
+    if not api_key:
+        # 立即结束
+        yield b"data: {\"type\":\"error\",\"message\":\"DIFY_API_KEY 未配置\"}\n\n"
+        yield b"event: done\n\n"
+        return
+
+    url = f"{base_url}/chat-messages"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    # Dify 需要一个单条输入，使用 messages 合并为字符串
+    user_content = "\n".join([m.content for m in chat.messages if m.role == "user"]) or chat.messages[-1].content
+    payload = {
+        "inputs": {},
+        "query": user_content,
+        "response_mode": "streaming",
+        "conversation_id": None,
+        "user": "web"
+    }
+    with requests.post(url, headers=headers, json=payload, stream=True) as r:
+        r.raise_for_status()
+        for raw in r.iter_lines(decode_unicode=True):
+            if not raw:
+                continue
+            # SSE 形如: event: message / data: {...}
+            if raw.startswith("data:"):
+                try:
+                    data_json = json.loads(raw[5:].strip())
+                except Exception:
+                    continue
+                # dify 流字段: answer 聚合增量
+                delta = data_json.get("answer")
+                if delta:
+                    data = json.dumps({"type": "delta", "content": delta}, ensure_ascii=False)
+                    yield f"data: {data}\n\n".encode()
+            elif raw.startswith("event:") and "end" in raw:
+                yield b"event: done\n\n"
+                yield b"data: {\"type\":\"done\"}\n\n"
+                break
+
+
+@app.post("/llm/stream")
+def llm_stream(chat: ChatRequest):
+    """统一的大模型SSE流接口。
+
+    返回格式为 text/event-stream，其中 data 字段的 JSON 为:
+    { "type": "delta" | "done" | "error", "content": "..." }
+    """
+    provider = (chat.provider or '').lower()
+
+    if provider == "ollama":
+        generator = _stream_ollama(chat)
+    elif provider == "dify":
+        generator = _stream_dify(chat)
+    else:
+        def _err():
+            yield b"data: {\"type\":\"error\",\"message\":\"不支持的provider\"}\n\n"
+            yield b"event: done\n\n"
+        generator = _err()
+
+    return StreamingResponse(generator, media_type="text/event-stream")
 
 def generate_default_prompt(config: DigitalHumanConfig) -> str:
     """生成默认的系统提示词"""
