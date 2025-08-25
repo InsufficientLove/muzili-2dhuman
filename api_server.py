@@ -1,16 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request  # 20250825_update: 新增 Request 用于通用性
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse  # 20250825_update: 新增 StreamingResponse 用于SSE
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
 import shutil
 import tempfile
-import subprocess
+import subprocess  # 20250825_update: 用于调用 ffmpeg 与 node 构建脚本
 from typing import Optional
 from pydantic import BaseModel
 import json
 import base64
-import requests
+import requests  # 20250825_update: 外呼 Ollama/Dify 等 LLM 服务
 
 # 导入现有模块
 from data_preparation_mini import data_preparation_mini
@@ -55,15 +55,17 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = 0.7
     stream: Optional[bool] = True
     provider_config: Optional[dict] = None  # 自定义端点/参数
+    # 20250825_update: 新增统一 LLM 入参模型（支持多 provider）
 
 
 # 环境变量配置（可在部署时覆盖）
-OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://127.0.0.1:11434")
-DIFY_API_URL = os.getenv("DIFY_API_URL", "https://api.dify.ai/v1")
-DIFY_API_KEY = os.getenv("DIFY_API_KEY", "")
+OLLAMA_API_URL = os.getenv("OLLAMA_API_URL", "http://127.0.0.1:11434")  # 20250825_update: 新增默认 Ollama 地址
+DIFY_API_URL = os.getenv("DIFY_API_URL", "https://api.dify.ai/v1")      # 20250825_update: 新增默认 Dify 地址
+DIFY_API_KEY = os.getenv("DIFY_API_KEY", "")                              # 20250825_update: 新增 Dify API Key
 
 
 def compress_webm(input_path: str, output_path: str, width: int = 480, crf: int = 40, bitrate: str = "500k") -> None:
+    # 20250825_update: 新增 - 生成移动端自动播放用的示例 webm
     """使用ffmpeg压缩生成webm示例视频（用于移动端自动播放封面）。"""
     cmd = [
         "ffmpeg",
@@ -139,8 +141,8 @@ async def train_digital_human(
             if os.path.exists(website_dir):
                 shutil.rmtree(website_dir)
             
-            src_web_dir = os.path.join(os.path.dirname(__file__), "web_source")
-            shutil.copytree(src_web_dir, website_dir)
+            src_web_dir = os.path.join(os.path.dirname(__file__), "web_source")  # 20250825_update: 使用绝对路径更稳健
+            shutil.copytree(src_web_dir, website_dir)  # 20250825_update
             
             # 复制资源文件
             assets_dir = f"{website_dir}/assets"
@@ -152,9 +154,9 @@ async def train_digital_human(
 
             # 生成移动端预览示例视频，非关键步骤失败可忽略
             try:
-                compress_webm(temp_video_path, f"{assets_dir}/example.webm", width=360, crf=45, bitrate="300k")
+                compress_webm(temp_video_path, f"{assets_dir}/example.webm", width=360, crf=45, bitrate="300k")  # 20250825_update
             except Exception as _:
-                pass
+                pass  # 20250825_update: 非关键失败忽略
             
             # 读取数据文件并转换为base64
             with open(f"{video_dir_path}/assets/data", 'rb') as f:
@@ -162,7 +164,7 @@ async def train_digital_human(
             base64_data = base64.b64encode(file_data).decode('utf-8')
             
             # 更新JavaScript配置（先更新 js_source，再构建 jsCode15）
-            logic_path = f"{website_dir}/js_source/logic.js"
+            logic_path = f"{website_dir}/js_source/logic.js"  # 20250825_update: 训练后将数据二进制替换进 js
             with open(logic_path, 'r', encoding='utf-8') as f:
                 js_content = f.read()
             updated_js = js_content.replace("数据文件需要替换的地方", base64_data)
@@ -184,14 +186,14 @@ async def train_digital_human(
                 f.write(human_logic_content)
             
             # 构建混淆版脚本，确保 index.html 引用的 jsCode15 可用
-            test_js_path = os.path.join(website_dir, "test.js")
-            js_code15_dir = os.path.join(website_dir, "jsCode15")
-            js_source_dir = os.path.join(website_dir, "js_source")
+            test_js_path = os.path.join(website_dir, "test.js")  # 20250825_update: 构建混淆版 jsCode15
+            js_code15_dir = os.path.join(website_dir, "jsCode15")  # 20250825_update
+            js_source_dir = os.path.join(website_dir, "js_source")  # 20250825_update
             if os.path.exists(test_js_path):
                 try:
-                    subprocess.run(["node", test_js_path], check=True)
+                    subprocess.run(["node", test_js_path], check=True)  # 20250825_update
                 except Exception as e:
-                    print(f"构建 jsCode15 失败: {e}")
+                    print(f"构建 jsCode15 失败: {e}")  # 20250825_update
             
             # 如果 jsCode15 仍缺少关键文件，退化为直接复制 js_source
             required_js = [
@@ -199,14 +201,14 @@ async def train_digital_human(
                 "logic.js", "loadMode1.js", "loadMode2.js", "load.js"
             ]
             try:
-                os.makedirs(js_code15_dir, exist_ok=True)
+                os.makedirs(js_code15_dir, exist_ok=True)  # 20250825_update
                 for fname in required_js:
                     src = os.path.join(js_source_dir, fname)
                     dst = os.path.join(js_code15_dir, fname)
                     if os.path.exists(src) and not os.path.exists(dst):
-                        shutil.copy(src, dst)
+                        shutil.copy(src, dst)  # 20250825_update: 回退复制，保障前端引用可用
             except Exception as e:
-                print(f"复制 js_source 到 jsCode15 失败: {e}")
+                print(f"复制 js_source 到 jsCode15 失败: {e}")  # 20250825_update
 
             # 清理临时文件
             shutil.rmtree(video_dir_path)
@@ -321,6 +323,7 @@ async def list_digital_humans():
 async def list_templates():
     """模板/形象列表（同 /list 的别名）。"""
     return await list_digital_humans()
+    # 20250825_update: 新增别名接口，便于前端语义调用
 
 
 @app.get("/llm/providers")
@@ -338,9 +341,10 @@ async def llm_providers():
         "available": bool(DIFY_API_KEY)
     })
     return {"providers": providers}
+    # 20250825_update: 新增 - 查询可用 LLM 提供方
 
 
-def _stream_ollama(chat: ChatRequest):
+def _stream_ollama(chat: ChatRequest):  # 20250825_update: 新增 - Ollama SSE 代理
     base_url = (chat.provider_config or {}).get("base_url", OLLAMA_API_URL).rstrip("/")
     url = f"{base_url}/api/chat"
     payload = {
@@ -368,7 +372,7 @@ def _stream_ollama(chat: ChatRequest):
                 yield f"data: {data}\n\n".encode()
 
 
-def _stream_dify(chat: ChatRequest):
+def _stream_dify(chat: ChatRequest):  # 20250825_update: 新增 - Dify SSE 代理
     base_url = (chat.provider_config or {}).get("base_url", DIFY_API_URL).rstrip("/")
     api_key = (chat.provider_config or {}).get("api_key", DIFY_API_KEY)
     if not api_key:
@@ -411,7 +415,7 @@ def _stream_dify(chat: ChatRequest):
 
 
 @app.post("/llm/stream")
-def llm_stream(chat: ChatRequest):
+def llm_stream(chat: ChatRequest):  # 20250825_update: 新增 - 统一 LLM 流式接口 (SSE)
     """统一的大模型SSE流接口。
 
     返回格式为 text/event-stream，其中 data 字段的 JSON 为:

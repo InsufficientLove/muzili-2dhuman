@@ -6,4 +6,4 @@ pyglm
 glfw
 PyOpenGL
 gradio
-requests
+requests # 20250825_update: 新增用于调用外部 LLM (Ollama/Dify)
