@@ -1,0 +1,21 @@
+# 基础依赖
+kaldi_native_fbank
+mediapipe
+tqdm
+scikit-learn
+pyglm
+glfw
+PyOpenGL
+gradio
+
+# API服务依赖
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pydantic==2.5.0
+
+# HTTP客户端
+requests==2.31.0
+
+# 其他工具
+python-dotenv==1.0.0 

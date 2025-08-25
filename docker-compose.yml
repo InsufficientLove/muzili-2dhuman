@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  digital-human-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./checkpoint:/app/checkpoint:ro
+      - ./video_data:/app/video_data
+      - ./website:/app/website
+      - ./temp:/app/temp
+      - ./audio:/app/audio:ro
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./website:/usr/share/nginx/html/digital-human:ro
+    depends_on:
+      - digital-human-api
+    restart: unless-stopped
+
+volumes:
+  checkpoint_data:
+  video_data:
+  website_data:
+  temp_data: 
