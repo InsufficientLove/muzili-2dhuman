@@ -1,4 +1,5 @@
-FROM python:3.11-slim
+# 20250825_update: 使用 bookworm 稳定分支，避免 testing/unstable 包名变更
+FROM python:3.11-slim-bookworm
 
 # 设置工作目录
 WORKDIR /app
@@ -7,11 +8,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     curl \
     ffmpeg \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libgomp1 \
     nodejs \
     npm \
