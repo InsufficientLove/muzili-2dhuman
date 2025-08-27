@@ -1,6 +1,6 @@
 # 20250825_update: 允许通过构建参数切换基础镜像以绕过受限镜像源
-# 默认仍指向 docker.io，可在构建时覆盖为可访问的镜像域
-ARG PY_IMAGE=docker.io/library/python:3.11-slim-bookworm
+# 默认使用 python:3.11-slim，可在构建时覆盖为可访问的镜像域
+ARG PY_IMAGE=python:3.11-slim
 FROM ${PY_IMAGE}
 
 # 设置工作目录
