@@ -1,5 +1,7 @@
-# 20250825_update: 使用 bookworm 稳定分支，避免 testing/unstable 包名变更
-FROM python:3.11-slim-bookworm
+# 20250825_update: 允许通过构建参数切换基础镜像以绕过受限镜像源
+# 默认仍指向 docker.io，可在构建时覆盖为可访问的镜像域
+ARG PY_IMAGE=docker.io/library/python:3.11-slim-bookworm
+FROM ${PY_IMAGE}
 
 # 设置工作目录
 WORKDIR /app
