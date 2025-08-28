@@ -376,8 +376,9 @@ def _stream_dify(chat: ChatRequest):  # 20250825_update: 新增 - Dify SSE 代�
     base_url = (chat.provider_config or {}).get("base_url", DIFY_API_URL).rstrip("/")
     api_key = (chat.provider_config or {}).get("api_key", DIFY_API_KEY)
     if not api_key:
-        # 立即结束
-        yield b"data: {\"type\":\"error\",\"message\":\"DIFY_API_KEY 未配置\"}\n\n"
+        # 立即结束（避免非ASCII字节字面量，使用UTF-8编码）  # 20250825_update
+        err_json = json.dumps({"type": "error", "message": "DIFY_API_KEY 未配置"}, ensure_ascii=False)
+        yield f"data: {err_json}\n\n".encode("utf-8")
         yield b"event: done\n\n"
         return
 
@@ -428,8 +429,9 @@ def llm_stream(chat: ChatRequest):  # 20250825_update: 新增 - 统一 LLM 流�
     elif provider == "dify":
         generator = _stream_dify(chat)
     else:
-        def _err():
-            yield b"data: {\"type\":\"error\",\"message\":\"不支持的provider\"}\n\n"
+        def _err():  # 20250825_update: 同上，避免非ASCII字节字面量
+            err_json = json.dumps({"type": "error", "message": "不支持的provider"}, ensure_ascii=False)
+            yield f"data: {err_json}\n\n".encode("utf-8")
             yield b"event: done\n\n"
         generator = _err()
 
