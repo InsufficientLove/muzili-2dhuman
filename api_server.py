@@ -246,12 +246,25 @@ async def get_digital_human_page(digital_human_id: str):
 @app.get("/digital-human/{digital_human_id}/assets/{asset_path:path}")
 async def get_digital_human_assets(digital_human_id: str, asset_path: str):
     """获取数字人资源文件"""
-    asset_full_path = os.path.join(os.path.dirname(__file__), f"website/{digital_human_id}", asset_path)
+    # 20250825_update: 修正路径，确保 /digital-human/{id}/assets/* 指向 website/{id}/assets/*
+    asset_full_path = os.path.join(os.path.dirname(__file__), f"website/{digital_human_id}", "assets", asset_path)
     
     if not os.path.exists(asset_full_path):
         raise HTTPException(status_code=404, detail="资源文件不存在")
     
     return FileResponse(asset_full_path)
+
+# 20250825_update: 新增通配静态资源路由，服务 image/js_source/jsCode15 等全部子目录
+@app.get("/digital-human/{digital_human_id}/{static_path:path}")
+async def get_digital_human_static(digital_human_id: str, static_path: str):
+    base_dir = os.path.join(os.path.dirname(__file__), f"website/{digital_human_id}")
+    file_path = os.path.join(base_dir, static_path)
+    if not os.path.commonpath([os.path.abspath(file_path), base_dir]) == os.path.abspath(base_dir):
+        # 防止路径穿越
+        raise HTTPException(status_code=400, detail="非法路径")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="资源文件不存在")
+    return FileResponse(file_path)
 
 @app.post("/inference")
 async def inference_digital_human(
