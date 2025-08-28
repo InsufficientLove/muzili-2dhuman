@@ -25,7 +25,8 @@ COPY requirements.txt .
 
 # 安装Python依赖
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir fastapi uvicorn python-multipart
+    pip install --no-cache-dir fastapi uvicorn python-multipart && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu  # 20250825_update: 安装CPU版Torch
 
 # 复制应用代码
 COPY . .
