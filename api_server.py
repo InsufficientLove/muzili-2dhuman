@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request  # 20250825_update: 新增 Request 用于通用性
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse  # 20250825_update: 新增 StreamingResponse 用于SSE
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, RedirectResponse  # 20250825_update: 新增 RedirectResponse 用于补斜杠
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import uuid
@@ -233,14 +233,17 @@ async def train_digital_human(
         raise HTTPException(status_code=500, detail=f"训练失败: {str(e)}")
 
 @app.get("/digital-human/{digital_human_id}")
+async def get_digital_human_page_no_slash(digital_human_id: str):
+    """补齐末尾斜杠，避免相对路径解析到 /digital-human/*（少了 {id}）  # 20250825_update"""
+    return RedirectResponse(url=f"/digital-human/{digital_human_id}/", status_code=307)
+
+@app.get("/digital-human/{digital_human_id}/")
 async def get_digital_human_page(digital_human_id: str):
-    """获取数字人网页"""
+    """获取数字人网页（带斜杠，保证相对路径以 /digital-human/{id}/ 为基准）  # 20250825_update"""
     website_dir = f"website/{digital_human_id}"
     index_path = os.path.join(os.path.dirname(__file__), website_dir, "index.html")
-    
     if not os.path.exists(index_path):
         raise HTTPException(status_code=404, detail="数字人不存在")
-    
     return FileResponse(index_path, media_type="text/html")
 
 @app.get("/digital-human/{digital_human_id}/assets/{asset_path:path}")
