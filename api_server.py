@@ -232,12 +232,12 @@ async def train_digital_human(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"训练失败: {str(e)}")
 
-@app.get("/digital-human/{digital_human_id}")
+@app.api_route("/digital-human/{digital_human_id}", methods=["GET", "HEAD"])  # 20250825_update
 async def get_digital_human_page_no_slash(digital_human_id: str):
     """补齐末尾斜杠，避免相对路径解析到 /digital-human/*（少了 {id}）  # 20250825_update"""
     return RedirectResponse(url=f"/digital-human/{digital_human_id}/", status_code=307)
 
-@app.get("/digital-human/{digital_human_id}/")
+@app.api_route("/digital-human/{digital_human_id}/", methods=["GET", "HEAD"])  # 20250825_update
 async def get_digital_human_page(digital_human_id: str):
     """获取数字人网页（带斜杠，保证相对路径以 /digital-human/{id}/ 为基准）  # 20250825_update"""
     website_dir = f"website/{digital_human_id}"
@@ -246,7 +246,7 @@ async def get_digital_human_page(digital_human_id: str):
         raise HTTPException(status_code=404, detail="数字人不存在")
     return FileResponse(index_path, media_type="text/html")
 
-@app.get("/digital-human/{digital_human_id}/assets/{asset_path:path}")
+@app.api_route("/digital-human/{digital_human_id}/assets/{asset_path:path}", methods=["GET", "HEAD"])  # 20250825_update
 async def get_digital_human_assets(digital_human_id: str, asset_path: str):
     """获取数字人资源文件"""
     # 20250825_update: 修正路径，确保 /digital-human/{id}/assets/* 指向 website/{id}/assets/*
@@ -258,7 +258,7 @@ async def get_digital_human_assets(digital_human_id: str, asset_path: str):
     return FileResponse(asset_full_path)
 
 # 20250825_update: 新增通配静态资源路由，服务 image/js_source/jsCode15 等全部子目录
-@app.get("/digital-human/{digital_human_id}/{static_path:path}")
+@app.api_route("/digital-human/{digital_human_id}/{static_path:path}", methods=["GET", "HEAD"])  # 20250825_update
 async def get_digital_human_static(digital_human_id: str, static_path: str):
     base_dir = os.path.join(os.path.dirname(__file__), f"website/{digital_human_id}")
     file_path = os.path.join(base_dir, static_path)
