@@ -628,15 +628,15 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-setInterval(function () {
-  const startTime = performance.now();
-  debugger;
-  const endTime = performance.now();
-  if (endTime - startTime > 100) { // 如果时间差较大，说明可能打开了开发者工具
-    alert('开发者工具已打开，请关闭！');
-    window.location.reload();
-  }
-}, 1000);
+// 20250829_disable setInterval(function () {
+// 20250829_disable   const startTime = performance.now();
+// 20250829_disable   debugger;
+// 20250829_disable   const endTime = performance.now();
+// 20250829_disable   if (endTime - startTime > 100) { // 如果时间差较大，说明可能打开了开发者工具
+// 20250829_disable     alert('开发者工具已打开，请关闭！');
+// 20250829_disable     window.location.reload();
+// 20250829_disable   }
+// 20250829_disable }, 1000);
 // window.addEventListener('resize', resizeCanvas);
 
 
