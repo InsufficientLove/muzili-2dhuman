@@ -367,7 +367,8 @@ async function PlayEnd() {
 };
 
 //const socket = new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
-const socket = new WebSocket('ws://localhost:19465/recognition?isSendConfig=true&isFree=true');
+const socket = new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
+//const socket = new WebSocket('ws://localhost:19465/recognition?isSendConfig=true&isFree=true');
 socket.addEventListener('open', (event) => {
   const systemMessage = `基本信息：
 
