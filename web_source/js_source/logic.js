@@ -602,7 +602,8 @@ async function disponseFrame() {
         ctx_video.fillStyle = 'white';
         ctx_video.font = '30px Arial';
         ctx_video.textAlign = 'right';
-        ctx_video.fillText(`作者微信：lkz4251`, canvas_video.width * 0.5 + 150, 50);
+        // 20250829_disable: remove author watermark
+        // ctx_video.fillText(`作者微信：lkz4251`, canvas_video.width * 0.5 + 150, 50);
 
  
     }
