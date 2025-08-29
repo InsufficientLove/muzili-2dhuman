@@ -366,8 +366,25 @@ async function PlayEnd() {
 
 };
 
-const socket = new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
-//const socket = new WebSocket('ws://localhost:19465/recognition?isSendConfig=true&isFree=true');
+// 20250829_update: primary & fallback WS
+function createSocketWithFallback() {
+  let ws = null;
+  try {
+    ws = new WebSocket('wss://dhumanBg.dianyueyun.com/recognition?isFastGPT=true');
+    let triedFallback = false;
+    ws.addEventListener('error', () => {
+      if (!triedFallback) {
+        triedFallback = true;
+        try { ws.close(); } catch (e) {}
+        ws = new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
+      }
+    });
+    return ws;
+  } catch (e) {
+    return new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
+  }
+}
+const socket = createSocketWithFallback();
 socket.addEventListener('open', (event) => {
   const systemMessage = `大模型身份信息覆盖`;
   const voiceType = "声音id信息覆盖"; 
