@@ -366,26 +366,12 @@ async function PlayEnd() {
 
 };
 
-// 20250829_update: primary & fallback WS
-function createSocketWithFallback() {
-  let ws = null;
-  try {
-    ws = new WebSocket('wss://dhumanBg.dianyueyun.com/recognition?isFastGPT=true');
-    let triedFallback = false;
-    ws.addEventListener('error', () => {
-      if (!triedFallback) {
-        triedFallback = true;
-        try { ws.close(); } catch (e) {}
-        ws = new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
-      }
-    });
-    return ws;
-  } catch (e) {
-    return new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
-  }
-}
-const socket = createSocketWithFallback();
-socket.addEventListener('open', (event) => {
+// 20250829_update: WS 主用+失败降级，并在重连后自动重绑事件
+let socket = null;
+let wsIsUsingPrimary = true;
+let wsHasTriedFallback = false;
+
+function handleOpen(event) {
   const systemMessage = `大模型身份信息覆盖`;
   const voiceType = "声音id信息覆盖"; 
 
@@ -399,12 +385,12 @@ socket.addEventListener('open', (event) => {
 
   socket.send(jsonString)
 
-});
+}
 
 
 let rightContent = null;
 let llmShowContent;
-socket.addEventListener('message', (event) => {
+function handleMessage(event) {
   //  console.log(event.data) 
   try {
     // 解析接收到的 JSON 数据
@@ -472,7 +458,48 @@ socket.addEventListener('message', (event) => {
   } catch (error) {
     console.error('解析 JSON 失败:', error);
   }
-});
+}
+
+function tryFallbackOnce() {
+  if (!wsHasTriedFallback && wsIsUsingPrimary) {
+    wsHasTriedFallback = true;
+    try { if (socket) socket.close(); } catch (e) {}
+    connect(false);
+  }
+}
+
+function handleError() {
+  tryFallbackOnce();
+}
+
+function handleClose() {
+  tryFallbackOnce();
+}
+
+function bindSocketEvents(ws) {
+  ws.addEventListener('open', handleOpen);
+  ws.addEventListener('message', handleMessage);
+  ws.addEventListener('error', handleError);
+  ws.addEventListener('close', handleClose);
+}
+
+function connect(usePrimary) {
+  wsIsUsingPrimary = usePrimary;
+  const url = usePrimary
+    ? 'wss://dhumanBg.dianyueyun.com/recognition?isFastGPT=true'
+    : 'wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true';
+  try {
+    socket = new WebSocket(url);
+    bindSocketEvents(socket);
+  } catch (e) {
+    if (usePrimary) {
+      wsHasTriedFallback = true;
+      connect(false);
+    }
+  }
+}
+
+connect(true);
 
 const userInput = document.getElementById('userInput');
 const submitButton = document.getElementById('submitButton');

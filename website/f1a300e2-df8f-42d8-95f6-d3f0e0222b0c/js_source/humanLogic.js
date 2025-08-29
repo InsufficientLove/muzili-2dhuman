@@ -366,28 +366,12 @@ async function PlayEnd() {
 
 };
 
-// 20250829_update: primary & fallback WS
-function createSocketWithFallback() {
-  let ws = null;
-  try {
-    ws = new WebSocket('wss://dhumanBg.dianyueyun.com/recognition?isFastGPT=true');
-    let triedFallback = false;
-    ws.addEventListener('error', () => {
-      if (!triedFallback) {
-        triedFallback = true;
-        try {
-          ws.close();
-        } catch (e) {}
-        ws = new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
-      }
-    });
-    return ws;
-  } catch (e) {
-    return new WebSocket('wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true');
-  }
-}
-const socket = createSocketWithFallback();
-socket.addEventListener('open', (event) => {
+// 20250829_update: WS 主用+失败降级，并在重连后自动重绑事件
+let socket = null;
+let wsIsUsingPrimary = true;
+let wsHasTriedFallback = false;
+
+function handleOpen(event) {
   const systemMessage = `基本信息：
 
 名字：小卿
@@ -437,7 +421,118 @@ socket.addEventListener('open', (event) => {
 
   socket.send(jsonString)
 
-});
+}
+
+function handleMessage(event) {
+  //  console.log(event.data) 
+  try {
+    // 解析接收到的 JSON 数据
+    const jsonData = JSON.parse(event.data);
+
+    if (jsonData.DataType == "TTS") {
+
+      const data = jsonData.Data;
+      const dataJson = JSON.parse(data);
+
+      if (!(/^\s*$/.test(dataJson.AudioData))) {
+        const audioUint8Array = base64ToArrayBuffer(dataJson.AudioData);
+        audioQueue.push(audioUint8Array)
+        PlayWav();
+      }
+
+      llmShowContent.textContent += dataJson.Text;
+
+      // voiceInfoDiv.text内容 = "正在讲话..."
+
+      // 滚动到底部
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight, // 滚动到底部
+        behavior: 'smooth' // 平滑滚动
+      });
+    }
+    else if (jsonData.DataType == "VoiceRecognitionDelta") { 
+      const data = jsonData.Data;
+      if (rightContent == null) {
+        rightContent = addItem('right')
+        rightContent.textContent = data;
+      }
+      else {
+        rightContent.textContent += data;
+      }
+    }
+    else if (jsonData.DataType == "StartLLM") {
+      isCreateAudioFinish = false;
+      const data = jsonData.Data;
+      if (rightContent == null) 
+        rightContent = addItem('right')
+      rightContent.textContent = data;
+      rightContent = null;
+
+      IsRecogition = false;
+
+      llmShowContent = addItem('left')
+
+      //  voiceInfoDiv.text内容 = "正在思考..." 
+
+      audioQueue = [];
+
+      if (!audioContext || audioContext.state === 'closed') {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({
+          latencyHint: 'interactive',
+        });
+      } else if (audioContext.state === 'suspended') {
+        audioContext.resume(); // 如果处于暂停状态，则恢复
+      }
+    }
+    else if (jsonData.DataType == "Finish") {
+      isCreateAudioFinish = true;
+    }
+
+  } catch (error) {
+    console.error('解析 JSON 失败:', error);
+  }
+}
+
+function tryFallbackOnce() {
+  if (!wsHasTriedFallback && wsIsUsingPrimary) {
+    wsHasTriedFallback = true;
+    try { if (socket) socket.close(); } catch (e) {}
+    connect(false);
+  }
+}
+
+function handleError() {
+  tryFallbackOnce();
+}
+
+function handleClose() {
+  tryFallbackOnce();
+}
+
+function bindSocketEvents(ws) {
+  ws.addEventListener('open', handleOpen);
+  ws.addEventListener('message', handleMessage);
+  ws.addEventListener('error', handleError);
+  ws.addEventListener('close', handleClose);
+}
+
+function connect(usePrimary) {
+  wsIsUsingPrimary = usePrimary;
+  const url = usePrimary
+    ? 'wss://dhumanBg.dianyueyun.com/recognition?isFastGPT=true'
+    : 'wss://2dhuman.lkz.fit/recognition?isSendConfig=true&isFree=true';
+  try {
+    socket = new WebSocket(url);
+    bindSocketEvents(socket);
+  } catch (e) {
+    if (usePrimary) {
+      wsHasTriedFallback = true;
+      connect(false);
+    }
+  }
+}
+
+connect(true);
 
 
 let rightContent = null;
